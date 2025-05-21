@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOY - Voice Of You</title>
+    <!-- Предзагрузка ключевых ресурсов -->
+    <link rel="modulepreload" href="/src/App.vue" />
+    <link rel="modulepreload" href="/src/router/index.ts" />
+    <link rel="modulepreload" href="/src/views/LoginView.vue" />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #f9fafb;
+        font-family: sans-serif;
+      }
+      
+      .app-loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(to right, #4f46e5, #6366f1);
+        color: white;
+        z-index: 9999;
+        transition: opacity 0.3s;
+      }
+      
+      .app-loading h1 {
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+      }
+      
+      .app-loading p {
+        font-size: 1.2rem;
+        margin-top: 0;
+        opacity: 0.9;
+      }
+      
+      .loader {
+        margin-top: 2rem;
+        width: 50px;
+        height: 50px;
+        border: 5px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+      }
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      #app:not(:empty) + .app-loading {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div class="app-loading">
+      <h1>VOY</h1>
+      <p>Voice Of You</p>
+      <div class="loader"></div>
+    </div>
+    <!-- Асинхронная загрузка скрипта для ускорения рендеринга -->
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+      // Скрываем прелоадер после загрузки приложения
+      document.addEventListener('DOMContentLoaded', () => {
+        const app = document.getElementById('app');
+        const observer = new MutationObserver((mutations) => {
+          if (app.children.length > 0) {
+            document.querySelector('.app-loading').style.display = 'none';
+            observer.disconnect();
+          }
+        });
+        
+        observer.observe(app, { childList: true });
+        
+        // Резервный таймаут на случай, если приложение загружается очень долго
+        setTimeout(() => {
+          document.querySelector('.app-loading').style.display = 'none';
+        }, 3000);
+      });
+    </script>
+  </body>
+</html>
