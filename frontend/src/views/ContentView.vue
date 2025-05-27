@@ -11,7 +11,7 @@
           <h1 class="text-3xl font-bold text-gray-900">{{ isEditing ? 'Редактирование контента' : 'Просмотр контента' }}</h1>
         </div>
         <div class="flex items-center space-x-4">
-          <template v-if="!isEditing">
+          <template v-if="!isEditing && contentStore.currentContent">
             <Button 
               variant="outline" 
               @click="isEditing = true"
@@ -25,7 +25,7 @@
               variant="primary"
               @click="publishContent"
               :is-loading="isPublishing"
-              v-if="!content.isPublished"
+              v-if="contentStore.currentContent && !contentStore.currentContent.is_published"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -42,7 +42,7 @@
               Удалить
             </Button>
           </template>
-          <template v-else>
+          <template v-else-if="isEditing">
             <Button 
               variant="outline" 
               @click="cancelEditing"
@@ -60,24 +60,33 @@
         </div>
       </div>
 
+      <!-- Индикатор загрузки -->
+      <div v-if="contentStore.isLoading" class="text-center py-12">
+        <svg class="animate-spin h-10 w-10 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p class="mt-4 text-gray-600">Загрузка контента...</p>
+      </div>
+
       <!-- Информация о контенте -->
-      <div class="bg-white shadow-sm rounded-lg p-6 mb-8">
+      <div v-else-if="contentStore.currentContent" class="bg-white shadow-sm rounded-lg p-6 mb-8">
         <div class="flex justify-between mb-6">
           <div>
             <div class="flex items-center mb-2">
-              <span v-if="content.isGenerated" class="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded mr-2">
+              <span v-if="contentStore.currentContent.is_generated" class="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded mr-2">
                 Сгенерировано
               </span>
               <span :class="[
                 'text-xs px-2 py-1 rounded',
-                content.isPublished 
+                contentStore.currentContent.is_published 
                   ? 'bg-green-100 text-green-800' 
                   : 'bg-gray-100 text-gray-800'
               ]">
-                {{ content.isPublished ? 'Опубликовано' : 'Черновик' }}
+                {{ contentStore.currentContent.is_published ? 'Опубликовано' : 'Черновик' }}
               </span>
             </div>
-            <h2 v-if="!isEditing" class="text-2xl font-semibold text-gray-900">{{ content.title }}</h2>
+            <h2 v-if="!isEditing" class="text-2xl font-semibold text-gray-900">{{ contentStore.currentContent.title }}</h2>
             <input 
               v-else
               v-model="editedContent.title"
@@ -85,9 +94,9 @@
               placeholder="Заголовок"
             />
             <p class="text-gray-500 text-sm">
-              Создано: {{ content.createdAt }} 
-              <span v-if="content.updatedAt !== content.createdAt">
-                · Обновлено: {{ content.updatedAt }}
+              Создано: {{ formatDate(contentStore.currentContent.created_at) }}
+              <span v-if="contentStore.currentContent.updated_at !== contentStore.currentContent.created_at">
+                · Обновлено: {{ formatDate(contentStore.currentContent.updated_at) }}
               </span>
             </p>
           </div>
@@ -97,7 +106,7 @@
               size="sm"
               @click="regenerateContent"
               :is-loading="isRegenerating"
-              v-if="content.isGenerated && !isEditing"
+              v-if="contentStore.currentContent.is_generated && !isEditing"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -109,16 +118,30 @@
 
         <!-- Содержимое контента -->
         <div v-if="!isEditing" class="prose prose-indigo max-w-none">
-          <div v-html="content.content"></div>
+          <div v-html="markdownToHtml(contentStore.currentContent?.content_md || '')"></div>
         </div>
         <div v-else>
           <textarea
-            v-model="editedContent.content"
+            v-model="editedContent.content_md"
             rows="20"
-            class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent font-mono"
-            placeholder="Содержимое контента в HTML-формате"
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent font-mono resize-none"
+            placeholder="Содержимое контента в Markdown-формате"
           ></textarea>
         </div>
+      </div>
+      
+      <!-- Сообщение об ошибке -->
+      <div v-else-if="contentStore.error" class="bg-white shadow-sm rounded-lg p-6 text-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-red-500 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Ошибка при загрузке контента</h3>
+        <p class="text-gray-600 mb-6">{{ contentStore.error }}</p>
+        <router-link to="/content">
+          <Button variant="primary">
+            Вернуться к списку
+          </Button>
+        </router-link>
       </div>
       
       <!-- Диалог подтверждения удаления -->
@@ -152,14 +175,19 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useContentStore } from '@/stores/content'
+import type { Content } from '@/stores/content'
+import { useToast } from 'vue-toast-notification'
 import DashboardLayout from '@/components/layout/DashboardLayout.vue'
 import Button from '@/components/ui/Button.vue'
+import { marked } from 'marked' // Правильный импорт библиотеки marked
 
 const route = useRoute()
 const router = useRouter()
+const contentStore = useContentStore()
+const toast = useToast()
 
 // Состояния
-const isLoading = ref(true)
 const isEditing = ref(false)
 const isSaving = ref(false)
 const isPublishing = ref(false)
@@ -167,130 +195,137 @@ const isRegenerating = ref(false)
 const isDeleting = ref(false)
 const showDeleteConfirm = ref(false)
 
-// Мок-данные для примера
-const content = reactive({
-  id: '1',
-  title: 'Будущее удаленной работы в технологических компаниях',
-  content: `
-    <h1>Будущее удаленной работы в технологических компаниях</h1>
-    <p>Удаленная работа полностью изменила функционирование технологических компаний. От распределенных команд до виртуальных рабочих пространств, мы наблюдаем революцию в том, как организуется работа.</p>
-    <h2>Преимущества удаленной работы</h2>
-    <p>Удаленная работа предлагает множество преимуществ как для сотрудников, так и для работодателей. Сотрудники получают гибкость в организации своего времени и рабочего пространства, что может привести к лучшему балансу между работой и личной жизнью.</p>
-    <p>Для компаний удаленная работа означает возможность привлекать таланты со всего мира, не ограничиваясь географическим местоположением офиса. Это особенно важно в условиях глобальной конкуренции за квалифицированных специалистов.</p>
-    <h2>Вызовы удаленной работы</h2>
-    <p>Несмотря на преимущества, удаленная работа также создает ряд вызовов. Одним из основных является поддержание эффективной коммуникации и командного духа в виртуальной среде.</p>
-    <p>Технологические компании разрабатывают и внедряют новые инструменты для решения этих проблем, от платформ для видеоконференций до сложных систем управления проектами и асинхронной коммуникации.</p>
-    <h2>Гибридные модели работы</h2>
-    <p>В будущем, вероятно, наиболее популярными станут гибридные модели работы, сочетающие элементы как удаленной, так и офисной работы. Эти модели позволяют использовать преимущества обоих подходов, адаптируясь к потребностям как компаний, так и сотрудников.</p>
-    <blockquote>
-      <p>Будущее работы не ограничивается выбором между удаленной и офисной работой. Речь идет о создании гибких, адаптивных моделей, которые работают для каждой конкретной компании и ее команды.</p>
-    </blockquote>
-    <h2>Заключение</h2>
-    <p>Технологические компании находятся на переднем крае изменений в организации работы. От внедрения новых инструментов до переосмысления корпоративной культуры, эти изменения формируют будущее работы не только в технологическом секторе, но и в мире в целом.</p>
-  `,
-  createdAt: '10.06.2023',
-  updatedAt: '12.06.2023',
-  isPublished: false,
-  isGenerated: true
-})
+// Получаем ID контента из URL
+const contentId = route.params.id as string
 
-// Копия для редактирования
+// Редактируемые данные
 const editedContent = reactive({
   title: '',
-  content: ''
+  content_md: ''
 })
 
-// Загрузка контента при монтировании компонента
-onMounted(async () => {
-  const contentId = route.params.id
-  
+// Функция для преобразования Markdown в HTML
+const markdownToHtml = (markdown: string) => {
   try {
-    // В реальном приложении здесь был бы запрос к API для получения контента
-    // В этом примере мы уже используем мок-данные
-    
-    // Имитация загрузки
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // В реальном приложении здесь мы бы обновили состояние content
-    isLoading.value = false
+    return marked(markdown)
   } catch (error) {
-    console.error('Ошибка при загрузке контента:', error)
-    isLoading.value = false
-  }
-})
-
-// Методы
-const saveContent = async () => {
-  isSaving.value = true
-  
-  try {
-    // В реальном приложении здесь был бы запрос к API для сохранения контента
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Обновляем данные
-    content.title = editedContent.title
-    content.content = editedContent.content
-    content.updatedAt = new Date().toLocaleDateString()
-    
-    // Выходим из режима редактирования
-    isEditing.value = false
-  } catch (error) {
-    console.error('Ошибка при сохранении контента:', error)
-  } finally {
-    isSaving.value = false
+    console.error('Ошибка при преобразовании Markdown в HTML:', error)
+    return markdown // Возвращаем исходный текст в случае ошибки
   }
 }
 
+// Загружаем контент при монтировании компонента
+onMounted(async () => {
+  try {
+    await contentStore.getContentById(contentId)
+    
+    // Инициализируем форму редактирования данными из хранилища
+    if (contentStore.currentContent) {
+      editedContent.title = contentStore.currentContent.title || ''
+      editedContent.content_md = contentStore.currentContent.content_md || ''
+    }
+  } catch (error) {
+    console.error('Ошибка при загрузке контента:', error)
+    router.push('/content')
+  }
+})
+
+// Наблюдаем за изменением currentContent в хранилище
+watch(() => contentStore.currentContent, (newContent) => {
+  if (newContent) {
+    editedContent.title = newContent.title || ''
+    editedContent.content_md = newContent.content_md || ''
+  }
+})
+
+// Форматирование даты
+const formatDate = (dateString: string) => {
+  try {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('ru-RU', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    })
+  } catch (e) {
+    return dateString
+  }
+}
+
+// Обработчики действий
 const cancelEditing = () => {
-  // Сбрасываем изменения и выходим из режима редактирования
+  // Сбрасываем изменения и возвращаемся в режим просмотра
+  if (contentStore.currentContent) {
+    editedContent.title = contentStore.currentContent.title || ''
+    editedContent.content_md = contentStore.currentContent.content_md || ''
+  }
   isEditing.value = false
+}
+
+const saveContent = async () => {
+  if (!editedContent.title.trim()) {
+    toast.error('Заголовок не может быть пустым', { duration: 3000 })
+    return
+  }
+  
+  if (!editedContent.content_md.trim()) {
+    toast.error('Содержимое не может быть пустым', { duration: 3000 })
+    return
+  }
+  
+  isSaving.value = true
+  
+  try {
+    await contentStore.updateContent(contentId, {
+      title: editedContent.title,
+      content_md: editedContent.content_md
+    })
+    
+    toast.success('Контент успешно сохранен', { duration: 3000 })
+    isEditing.value = false
+  } catch (error) {
+    console.error('Ошибка при сохранении контента:', error)
+    // Ошибка уже будет показана через перехватчик в хранилище
+  } finally {
+    isSaving.value = false
+  }
 }
 
 const publishContent = async () => {
   isPublishing.value = true
   
   try {
-    // В реальном приложении здесь был бы запрос к API для публикации контента
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Обновляем статус
-    content.isPublished = true
-    content.updatedAt = new Date().toLocaleDateString()
+    await contentStore.publishContent(contentId)
+    toast.success('Контент успешно опубликован', { duration: 3000 })
   } catch (error) {
     console.error('Ошибка при публикации контента:', error)
+    // Ошибка уже будет показана через перехватчик в хранилище
   } finally {
     isPublishing.value = false
   }
 }
 
 const regenerateContent = async () => {
+  if (!contentStore.currentContent) return
+  
   isRegenerating.value = true
   
   try {
-    // В реальном приложении здесь был бы запрос к API для регенерации контента
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // Используем текущий заголовок и содержимое как основу для регенерации
+    const response = await contentStore.generateContent({
+      prompt: contentStore.currentContent.title || '',
+      use_voice_profile: true
+    })
     
-    // Обновляем контент (в реальном приложении новый контент пришел бы с сервера)
-    content.content = `
-      <h1>${content.title}</h1>
-      <p>Это обновленный контент после регенерации. В реальном приложении здесь будет новый вариант сгенерированного контента с помощью API.</p>
-      <h2>Новый подзаголовок 1</h2>
-      <p>Регенерированный текст для первого раздела, который отличается от предыдущего варианта.</p>
-      <ul>
-        <li>Новый пункт 1</li>
-        <li>Новый пункт 2</li>
-        <li>Новый пункт 3</li>
-      </ul>
-      <h2>Новый подзаголовок 2</h2>
-      <p>Дополнительная информация для второго раздела, которая отличается от предыдущего варианта.</p>
-      <blockquote>
-        <p>Обновленная цитата в новой версии контента после регенерации.</p>
-      </blockquote>
-      <p>Новый заключительный абзац, подводящий итоги всего вышесказанного.</p>
-    `
-    content.updatedAt = new Date().toLocaleDateString()
+    // Обновляем только содержимое, сохраняя заголовок
+    await contentStore.updateContent(contentId, {
+      content_md: response.content_md || response.content || ''
+    })
+    
+    toast.success('Контент успешно обновлен', { duration: 3000 })
   } catch (error) {
     console.error('Ошибка при регенерации контента:', error)
+    // Ошибка уже будет показана через перехватчик в хранилище
   } finally {
     isRegenerating.value = false
   }
@@ -300,24 +335,15 @@ const deleteContent = async () => {
   isDeleting.value = true
   
   try {
-    // В реальном приложении здесь был бы запрос к API для удаления контента
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Перенаправляем пользователя на список контента
+    await contentStore.deleteContent(contentId)
+    toast.success('Контент успешно удален', { duration: 3000 })
     router.push('/content')
   } catch (error) {
     console.error('Ошибка при удалении контента:', error)
-    showDeleteConfirm.value = false
+    // Ошибка уже будет показана через перехватчик в хранилище
   } finally {
     isDeleting.value = false
+    showDeleteConfirm.value = false
   }
 }
-
-// При входе в режим редактирования копируем данные
-watch(isEditing, (newValue) => {
-  if (newValue) {
-    editedContent.title = content.title
-    editedContent.content = content.content
-  }
-})
 </script> 

@@ -26,7 +26,20 @@ export default defineConfig({
         target: 'http://localhost:8081',
         changeOrigin: true,
       },
-      '/api/v1/content': {
+      '/api/v1/posts': {
+        target: 'http://localhost:8082',
+        changeOrigin: true,
+      },
+      '/api/v1/generator': {
+        target: 'http://localhost:8083',
+        changeOrigin: true,
+      },
+      '/api/v1/speech': {
+        target: 'http://localhost:8084',
+        changeOrigin: true,
+      },
+      // Маршруты для оркестратора
+      '/api/v1/notes': {
         target: 'http://localhost:8082',
         changeOrigin: true,
       }

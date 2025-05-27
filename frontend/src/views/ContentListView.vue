@@ -5,9 +5,6 @@
         <h1 class="text-3xl font-bold text-gray-900">Мой контент</h1>
         <router-link to="/content/new">
           <Button variant="primary">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
             Создать новый контент
           </Button>
         </router-link>
@@ -105,16 +102,16 @@
           <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <div class="flex items-center mb-2">
-                <span v-if="item.isGenerated" class="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded mr-2">
+                <span v-if="item.is_generated" class="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded mr-2">
                   Сгенерировано
                 </span>
                 <span :class="[
                   'text-xs px-2 py-1 rounded',
-                  item.isPublished 
+                  item.is_published 
                     ? 'bg-green-100 text-green-800' 
                     : 'bg-gray-100 text-gray-800'
                 ]">
-                  {{ item.isPublished ? 'Опубликовано' : 'Черновик' }}
+                  {{ item.is_published ? 'Опубликовано' : 'Черновик' }}
                 </span>
               </div>
               <router-link :to="`/content/${item.id}`" class="text-xl font-semibold text-gray-900 hover:text-indigo-600">
@@ -122,9 +119,9 @@
               </router-link>
               <p class="text-gray-600 mt-2 line-clamp-2">{{ item.excerpt }}</p>
               <p class="text-gray-500 text-sm mt-2">
-                Создано: {{ item.createdAt }} 
-                <span v-if="item.updatedAt !== item.createdAt">
-                  · Обновлено: {{ item.updatedAt }}
+                Создано: {{ formatDate(item.created_at) }}
+                <span v-if="item.updated_at !== item.created_at">
+                  · Обновлено: {{ formatDate(item.updated_at) }}
                 </span>
               </p>
             </div>
@@ -137,7 +134,7 @@
                 Просмотреть
               </router-link>
               <button 
-                @click="deleteContent(item.id)"
+                @click="deleteContent(String(item.id))"
                 class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -213,15 +210,21 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useContentStore } from '@/stores/content'
 import DashboardLayout from '@/components/layout/DashboardLayout.vue'
 import Button from '@/components/ui/Button.vue'
+import { useToast } from 'vue-toast-notification'
+
+// Инициализация хранилища и уведомлений
+const contentStore = useContentStore()
+const toast = useToast()
 
 // Состояния
-const isLoading = ref(true)
 const isDeleting = ref(false)
 const contentToDelete = ref<string | null>(null)
 const currentPage = ref(1)
 const totalPages = ref(1)
+const itemsPerPage = 10
 
 // Фильтры
 const filters = reactive({
@@ -230,89 +233,51 @@ const filters = reactive({
   search: ''
 })
 
-// Мок-данные для примера
-const contentList = ref([
-  {
-    id: '1',
-    title: 'Будущее удаленной работы в технологических компаниях',
-    excerpt: 'Исследование тенденций перехода к удаленной работе в технологическом секторе и его влияние на продуктивность и культуру компаний.',
-    createdAt: '10.06.2023',
-    updatedAt: '12.06.2023',
-    isPublished: true,
-    isGenerated: true
-  },
-  {
-    id: '2',
-    title: 'Влияние искусственного интеллекта на творческие профессии',
-    excerpt: 'Анализ того, как ИИ может дополнять творческую работу, а не заменять ее, и как креативщики адаптируются к новым технологиям.',
-    createdAt: '01.06.2023',
-    updatedAt: '01.06.2023',
-    isPublished: true,
-    isGenerated: true
-  },
-  {
-    id: '3',
-    title: 'Стратегии эффективного управления проектами в 2023 году',
-    excerpt: 'Обзор современных подходов к управлению проектами с учетом гибридных команд и возросшей важности цифровых инструментов.',
-    createdAt: '20.05.2023',
-    updatedAt: '25.05.2023',
-    isPublished: false,
-    isGenerated: false
-  },
-  {
-    id: '4',
-    title: 'Эмоциональный интеллект в лидерстве: почему это важно',
-    excerpt: 'Исследование роли эмоционального интеллекта в эффективном лидерстве и как развивать эти навыки в современной бизнес-среде.',
-    createdAt: '15.05.2023',
-    updatedAt: '16.05.2023',
-    isPublished: true,
-    isGenerated: true
-  },
-  {
-    id: '5',
-    title: 'Устойчивое развитие и корпоративная ответственность',
-    excerpt: 'Как компании могут внедрять принципы устойчивого развития в свои бизнес-модели и какие выгоды это приносит.',
-    createdAt: '05.05.2023',
-    updatedAt: '07.05.2023',
-    isPublished: false,
-    isGenerated: true
-  }
-])
+// Получаем данные из хранилища
+const isLoading = computed(() => contentStore.isLoading)
 
 // Фильтрация контента
 const filteredContent = computed(() => {
-  return contentList.value.filter(item => {
+  return contentStore.contentList.filter(item => {
     // Фильтр по типу контента
-    if (filters.contentType === 'generated' && !item.isGenerated) return false
-    if (filters.contentType === 'manual' && item.isGenerated) return false
+    if (filters.contentType === 'generated' && !item.is_generated) return false
+    if (filters.contentType === 'manual' && item.is_generated) return false
     
     // Фильтр по статусу
-    if (filters.status === 'published' && !item.isPublished) return false
-    if (filters.status === 'draft' && item.isPublished) return false
+    if (filters.status === 'published' && !item.is_published) return false
+    if (filters.status === 'draft' && item.is_published) return false
     
     // Поиск по заголовку
-    if (filters.search && !item.title.toLowerCase().includes(filters.search.toLowerCase())) return false
+    if (filters.search && !item.title?.toLowerCase().includes(filters.search.toLowerCase())) return false
     
     return true
   })
 })
 
+// Форматирование даты
+const formatDate = (dateString: string) => {
+  try {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('ru-RU', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    })
+  } catch (e) {
+    return dateString
+  }
+}
+
 // Загрузка данных при монтировании компонента
 onMounted(async () => {
   try {
-    // В реальном приложении здесь был бы запрос к API для получения списка контента
-    // В этом примере мы уже используем мок-данные
-    
-    // Имитация загрузки
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await contentStore.getContentList()
     
     // Устанавливаем количество страниц
-    totalPages.value = Math.ceil(contentList.value.length / 10) // 10 элементов на страницу
-    
-    isLoading.value = false
+    totalPages.value = Math.ceil(contentStore.contentList.length / itemsPerPage)
   } catch (error) {
     console.error('Ошибка при загрузке списка контента:', error)
-    isLoading.value = false
+    toast.error('Не удалось загрузить контент', { duration: 5000 })
   }
 })
 
@@ -327,22 +292,19 @@ const confirmDelete = async () => {
   isDeleting.value = true
   
   try {
-    // В реальном приложении здесь был бы запрос к API для удаления контента
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Удаляем элемент из списка
-    const index = contentList.value.findIndex(item => item.id === contentToDelete.value)
-    if (index !== -1) {
-      contentList.value.splice(index, 1)
-    }
+    await contentStore.deleteContent(contentToDelete.value)
     
     // Обновляем количество страниц
-    totalPages.value = Math.ceil(contentList.value.length / 10)
+    totalPages.value = Math.ceil(contentStore.contentList.length / itemsPerPage)
     
     // Закрываем диалог
     contentToDelete.value = null
+    
+    // Уведомляем пользователя
+    toast.success('Контент успешно удален', { duration: 3000 })
   } catch (error) {
     console.error('Ошибка при удалении контента:', error)
+    // Ошибка уже будет показана через перехватчик в хранилище
   } finally {
     isDeleting.value = false
   }

@@ -21,6 +21,8 @@ type PostService interface {
 	GetPost(ctx context.Context, postID uint64) (*dto.PostResponse, error)
 	GetPosts(ctx context.Context, userID uint64, page, size int) (*dto.PostListResponse, error)
 	DeletePost(ctx context.Context, postID, userID uint64) error
+	UpdatePost(ctx context.Context, postID, userID uint64, req *dto.UpdatePostRequest) (*dto.PostResponse, error)
+	GetNotes(ctx context.Context, userID uint64, page, size int) (*dto.NoteListResponse, error)
 }
 
 // postService реализация сервиса постов
@@ -168,4 +170,75 @@ func (s *postService) GetPosts(ctx context.Context, userID uint64, page, size in
 // DeletePost удаляет пост
 func (s *postService) DeletePost(ctx context.Context, postID, userID uint64) error {
 	return s.repo.DeletePost(ctx, postID, userID)
+}
+
+// UpdatePost обновляет пост
+func (s *postService) UpdatePost(ctx context.Context, postID, userID uint64, req *dto.UpdatePostRequest) (*dto.PostResponse, error) {
+	// Проверяем, что пост существует и принадлежит пользователю
+	post, err := s.repo.GetPostByID(ctx, postID)
+	if err != nil {
+		return nil, err
+	}
+
+	if post == nil {
+		return nil, errors.New("post not found")
+	}
+
+	if post.UserID != userID {
+		return nil, errors.New("post not found or not owned by user")
+	}
+
+	// Обновляем поля поста
+	if req.ContentMD != "" {
+		post.ContentMD = req.ContentMD
+	}
+
+	if req.Status != "" {
+		post.Status = req.Status
+	}
+
+	// Сохраняем обновленный пост
+	err = s.repo.UpdatePost(ctx, post)
+	if err != nil {
+		return nil, err
+	}
+
+	// Преобразуем модель в DTO
+	return &dto.PostResponse{
+		ID:        post.ID,
+		UserID:    post.UserID,
+		NoteID:    post.NoteID,
+		ContentMD: post.ContentMD,
+		Status:    post.Status,
+		CreatedAt: post.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: post.UpdatedAt.Format(time.RFC3339),
+	}, nil
+}
+
+// GetNotes получает список заметок пользователя
+func (s *postService) GetNotes(ctx context.Context, userID uint64, page, size int) (*dto.NoteListResponse, error) {
+	// Получаем заметки из репозитория
+	notes, total, err := s.repo.GetNotes(ctx, userID, page, size)
+	if err != nil {
+		return nil, err
+	}
+
+	// Преобразуем модели в DTO
+	noteResponses := make([]dto.NoteResponse, len(notes))
+	for i, note := range notes {
+		noteResponses[i] = dto.NoteResponse{
+			ID:           note.ID,
+			UserID:       note.UserID,
+			OriginalText: note.OriginalText,
+			Source:       note.Source,
+			CreatedAt:    note.CreatedAt.Format(time.RFC3339),
+		}
+	}
+
+	return &dto.NoteListResponse{
+		Notes: noteResponses,
+		Total: total,
+		Page:  page,
+		Size:  size,
+	}, nil
 }

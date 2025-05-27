@@ -78,37 +78,46 @@
             <div>
               <p class="text-gray-700">
                 Статус: 
-                <span v-if="profileData?.dnaData" class="text-green-600 font-medium">Активен</span>
+                <span v-if="voiceProfileStatus.isActive" class="text-green-600 font-medium">Активен</span>
                 <span v-else class="text-red-600 font-medium">Не настроен</span>
               </p>
               
-              <p v-if="profileData?.dnaData" class="text-sm text-gray-500">
-                Обновлен: {{ new Date(profileData.updatedAt).toLocaleDateString() }}
+              <p v-if="voiceProfileStatus.isActive" class="text-sm text-gray-500">
+                Обновлен: {{ formatDate(profileData?.updated_at) }}
               </p>
             </div>
             
             <router-link to="/voice-dna">
               <Button>
-                {{ profileData?.dnaData ? 'Обновить профиль' : 'Создать профиль' }}
+                {{ voiceProfileStatus.isActive ? 'Обновить профиль' : 'Создать профиль' }}
               </Button>
             </router-link>
           </div>
           
-          <div v-if="profileData?.dnaData" class="bg-gray-50 p-4 rounded-lg">
+          <div v-if="voiceProfileStatus.isActive" class="bg-gray-50 p-4 rounded-lg">
             <h3 class="text-sm font-medium text-gray-900 mb-2">Информация о профиле:</h3>
             <div class="space-y-2">
               <div class="flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
-                <span class="text-gray-700">Голосовые образцы: 5 записей</span>
+                <span class="text-gray-700">Отрасль: {{ voiceProfileData?.profile?.industry || 'Не указана' }}</span>
               </div>
               <div class="flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
-                <span class="text-gray-700">Качество: Хорошее</span>
+                <span class="text-gray-700">Основные темы: {{ formatTopics(voiceProfileData?.content?.mainTopics) }}</span>
               </div>
+              <div class="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                <span class="text-gray-700">Стиль: {{ formatCharacteristics(voiceProfileData?.style?.characteristics) }}</span>
+              </div>
+            </div>
+            <div class="mt-4 text-sm">
+              <p class="text-gray-600">Используйте этот профиль при создании нового контента для сохранения вашего уникального стиля и голоса.</p>
             </div>
           </div>
           
@@ -248,6 +257,31 @@ interface UserData {
   email: string
 }
 
+// Интерфейс для данных голосового профиля
+interface VoiceProfileData {
+  profile?: {
+    biography?: string
+    industry?: string
+  }
+  style?: {
+    formality?: number
+    characteristics?: string[]
+    examples?: string
+  }
+  audience?: {
+    description?: string
+    ageRange?: string
+    expertiseLevel?: string
+    goals?: string[]
+  }
+  content?: {
+    mainTopics?: string
+    painPoints?: string
+    goals?: string[]
+  }
+  createdAt?: string
+}
+
 const router = useRouter()
 const authStore = useAuthStore()
 const profileStore = useProfileStore()
@@ -255,6 +289,7 @@ const authApi = useAuthApi()
 
 const userData = ref<UserData | null>(null)
 const profileData = ref<ProfileData | null>(null)
+const voiceProfileData = ref<VoiceProfileData | null>(null)
 const isUpdatingProfile = ref(false)
 const isChangingPassword = ref(false)
 const isDeletingAccount = ref(false)
@@ -292,6 +327,39 @@ const passwordDataFilled = computed(() => {
   )
 })
 
+// Статус голосового профиля
+const voiceProfileStatus = computed(() => {
+  if (!profileData.value?.dna_data) {
+    return { isActive: false }
+  }
+  
+  try {
+    const dnaData = JSON.parse(profileData.value.dna_data)
+    return { 
+      isActive: !!(dnaData && Object.keys(dnaData).length > 0 && dnaData.profile && dnaData.style) 
+    }
+  } catch (e) {
+    console.error('Ошибка при парсинге dna_data:', e)
+    return { isActive: false }
+  }
+})
+
+// Форматирование данных профиля
+const formatDate = (dateString?: string): string => {
+  if (!dateString) return 'Нет данных'
+  return new Date(dateString).toLocaleDateString()
+}
+
+const formatTopics = (topics?: string): string => {
+  if (!topics) return 'Не указаны'
+  return topics.split(',').slice(0, 3).join(', ') + (topics.split(',').length > 3 ? '...' : '')
+}
+
+const formatCharacteristics = (characteristics?: string[]): string => {
+  if (!characteristics || characteristics.length === 0) return 'Не указан'
+  return characteristics.slice(0, 3).join(', ') + (characteristics.length > 3 ? '...' : '')
+}
+
 // Получение данных при монтировании компонента
 onMounted(async () => {
   try {
@@ -309,6 +377,15 @@ onMounted(async () => {
     // Получаем данные профиля
     const profile = await profileStore.getProfile()
     profileData.value = profile
+    
+    // Разбираем данные голосового профиля, если они есть
+    if (profile?.dna_data) {
+      try {
+        voiceProfileData.value = JSON.parse(profile.dna_data)
+      } catch (e) {
+        console.error('Ошибка при разборе данных голосового профиля:', e)
+      }
+    }
   } catch (error) {
     console.error('Ошибка при получении данных:', error)
   }

@@ -11,6 +11,12 @@ type GeneratePostRequest struct {
 	NoteID uint64 `json:"note_id" binding:"required"`
 }
 
+// UpdatePostRequest представляет запрос на обновление поста
+type UpdatePostRequest struct {
+	ContentMD string `json:"content_md"`
+	Status    string `json:"status" binding:"omitempty,oneof=draft published"` // draft|published
+}
+
 // PostResponse представляет ответ с данными поста
 type PostResponse struct {
 	ID        uint64 `json:"id"`
@@ -37,6 +43,14 @@ type NoteResponse struct {
 	OriginalText string `json:"original_text"`
 	Source       string `json:"source"`
 	CreatedAt    string `json:"created_at"`
+}
+
+// NoteListResponse представляет ответ со списком заметок
+type NoteListResponse struct {
+	Notes []NoteResponse `json:"notes"`
+	Total int64          `json:"total"`
+	Page  int            `json:"page"`
+	Size  int            `json:"size"`
 }
 
 // ErrorResponse представляет ответ с ошибкой

@@ -9,6 +9,9 @@ const baseConfig = {
   withCredentials: true, // Для работы с куками
 }
 
+// URL API-шлюза (оркестратора), который перенаправляет запросы к микросервисам
+const API_GATEWAY_URL = '/api/v1'
+
 /**
  * Создает экземпляр API-клиента для конкретного микросервиса
  * @param servicePath Путь к микросервису (auth, profile, content)
@@ -17,7 +20,7 @@ const baseConfig = {
  */
 export function createApiClient(servicePath, additionalConfig = {}) {
   // Формируем базовый URL для микросервиса
-  const baseURL = `/api/v1/${servicePath}`
+  const baseURL = `${API_GATEWAY_URL}/${servicePath}`
 
   // Создаем и возвращаем настроенный экземпляр axios
   const client = axios.create({
@@ -31,7 +34,7 @@ export function createApiClient(servicePath, additionalConfig = {}) {
     (response) => response,
     async (error) => {
       // Общая обработка ошибок для всех сервисов
-      const errorMessage = error.response?.data?.message || `Ошибка в сервисе ${servicePath}`
+      const errorMessage = error.response?.data?.error || `Ошибка в сервисе ${servicePath}`
       
       // Можно добавить специфичную обработку для разных статусов
       if (error.response?.status === 401) {
@@ -51,13 +54,15 @@ export function createApiClient(servicePath, additionalConfig = {}) {
   return client
 }
 
-// Создаем базовый экземпляр axios для auth API
+// Создаем базовый экземпляр axios для общих запросов
 const api = axios.create({
   ...baseConfig,
-  baseURL: '/api/v1'
+  baseURL: API_GATEWAY_URL
 })
 
 // Экспортируем готовые экземпляры для каждого сервиса
 export const authApi = createApiClient('auth')
 export const profileApi = createApiClient('profile')
-export const contentApi = createApiClient('content') 
+export const contentApi = createApiClient('posts') // Оркестратор обрабатывает запросы к постам
+export const generatorApi = createApiClient('generator')
+export const speechApi = createApiClient('speech') 

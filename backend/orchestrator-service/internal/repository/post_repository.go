@@ -15,6 +15,7 @@ import (
 type PostRepository interface {
 	CreateNote(ctx context.Context, note *models.Note) error
 	GetNoteByID(ctx context.Context, noteID uint64) (*models.Note, error)
+	GetNotes(ctx context.Context, userID uint64, page, size int) ([]*models.Note, int64, error)
 	CreatePost(ctx context.Context, post *models.Post) error
 	UpdatePost(ctx context.Context, post *models.Post) error
 	GetPostByID(ctx context.Context, postID uint64) (*models.Post, error)
@@ -136,4 +137,33 @@ func (r *postRepository) DeletePost(ctx context.Context, postID, userID uint64) 
 	}
 
 	return nil
+}
+
+// GetNotes получает список заметок пользователя
+func (r *postRepository) GetNotes(ctx context.Context, userID uint64, page, size int) ([]*models.Note, int64, error) {
+	var notes []*models.Note
+	var total int64
+
+	offset := (page - 1) * size
+
+	// Получаем общее количество
+	if err := r.db.WithContext(ctx).Model(&models.Note{}).Where("user_id = ?", userID).Count(&total).Error; err != nil {
+		r.logger.Error("Failed to count notes", zap.Error(err), zap.Uint64("user_id", userID))
+		return nil, 0, err
+	}
+
+	// Получаем заметки с пагинацией
+	result := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(size).
+		Find(&notes)
+
+	if result.Error != nil {
+		r.logger.Error("Failed to get notes", zap.Error(result.Error), zap.Uint64("user_id", userID))
+		return nil, 0, result.Error
+	}
+
+	return notes, total, nil
 }

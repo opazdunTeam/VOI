@@ -40,7 +40,12 @@ func SetupPostRoutes(router *gin.RouterGroup, handlers *PostHandlers, cfg *confi
 		posts.POST("/generate", handlers.GeneratePost)
 		posts.GET("", handlers.GetPosts)
 		posts.GET("/:id", handlers.GetPost)
+		posts.PUT("/:id", handlers.UpdatePost)
 		posts.DELETE("/:id", handlers.DeletePost)
+
+		// Эндпоинты для заметок
+		posts.POST("/notes", handlers.CreateNote)
+		posts.GET("/notes", handlers.GetNotes)
 	}
 }
 
@@ -201,4 +206,125 @@ func (h *PostHandlers) DeletePost(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// UpdatePost обновляет пост
+// @Summary Обновить пост
+// @Description Обновляет пост по ID
+// @Tags posts
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID поста"
+// @Param request body dto.UpdatePostRequest true "Данные для обновления поста"
+// @Success 200 {object} dto.PostResponse
+// @Failure 400 {object} dto.ErrorResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Failure 404 {object} dto.ErrorResponse
+// @Failure 500 {object} dto.ErrorResponse
+// @Router /posts/{id} [put]
+func (h *PostHandlers) UpdatePost(c *gin.Context) {
+	postID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid post ID"})
+		return
+	}
+
+	// Получаем ID пользователя из контекста (установлен middleware)
+	userClaims, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "unauthorized"})
+		return
+	}
+
+	var req dto.UpdatePostRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid request"})
+		return
+	}
+
+	post, err := h.service.UpdatePost(c.Request.Context(), postID, userClaims.UserID, &req)
+	if err != nil {
+		if err.Error() == "post not found" || err.Error() == "post not found or not owned by user" {
+			c.JSON(http.StatusNotFound, dto.ErrorResponse{Error: "post not found"})
+			return
+		}
+		h.logger.Error("Failed to update post", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "failed to update post"})
+		return
+	}
+
+	c.JSON(http.StatusOK, post)
+}
+
+// CreateNote создает новую заметку
+// @Summary Создать заметку
+// @Description Создает новую заметку
+// @Tags notes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.NoteRequest true "Данные для создания заметки"
+// @Success 201 {object} dto.NoteResponse
+// @Failure 400 {object} dto.ErrorResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Failure 500 {object} dto.ErrorResponse
+// @Router /posts/notes [post]
+func (h *PostHandlers) CreateNote(c *gin.Context) {
+	// Получаем ID пользователя из контекста (установлен middleware)
+	userClaims, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "unauthorized"})
+		return
+	}
+
+	var req dto.NoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid request"})
+		return
+	}
+
+	note, err := h.service.CreateNote(c.Request.Context(), userClaims.UserID, &req)
+	if err != nil {
+		h.logger.Error("Failed to create note", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "failed to create note"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, note)
+}
+
+// GetNotes получает список заметок пользователя
+// @Summary Получить список заметок
+// @Description Получает список заметок текущего пользователя
+// @Tags notes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param page query int false "Номер страницы"
+// @Param size query int false "Размер страницы"
+// @Success 200 {object} dto.NoteListResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Failure 500 {object} dto.ErrorResponse
+// @Router /posts/notes [get]
+func (h *PostHandlers) GetNotes(c *gin.Context) {
+	// Получаем ID пользователя из контекста (установлен middleware)
+	userClaims, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "unauthorized"})
+		return
+	}
+
+	// Параметры пагинации
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "10"))
+
+	notes, err := h.service.GetNotes(c.Request.Context(), userClaims.UserID, page, size)
+	if err != nil {
+		h.logger.Error("Failed to get notes", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "failed to get notes"})
+		return
+	}
+
+	c.JSON(http.StatusOK, notes)
 }

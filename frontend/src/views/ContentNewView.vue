@@ -8,6 +8,11 @@
         </p>
       </div>
 
+      <!-- Предупреждение об отсутствии голосового профиля -->
+      <VoiceProfileAlert 
+        message="Голосовой профиль не настроен. Вы не сможете генерировать контент в вашем собственном стиле." 
+      />
+
       <div class="bg-white shadow-sm rounded-lg p-6 mb-8">
         <div class="mb-6">
           <label for="title" class="block text-sm font-medium text-gray-700 mb-2">
@@ -36,7 +41,7 @@
             id="description"
             v-model="formData.description"
             rows="5"
-            class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
             placeholder="Опишите, о чем должен быть контент, или вставьте свои заметки"
             maxlength="500"
             required
@@ -112,10 +117,13 @@
                 type="checkbox"
                 id="useVoiceProfile"
                 v-model="formData.useVoiceProfile"
+                :disabled="!hasVoiceProfile"
                 class="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                :class="{'opacity-50 cursor-not-allowed': !hasVoiceProfile}"
               />
-              <label for="useVoiceProfile" class="ml-2 text-gray-700">
+              <label for="useVoiceProfile" class="ml-2 text-gray-700" :class="{'opacity-50': !hasVoiceProfile}">
                 Использовать мой голосовой профиль
+                <span v-if="!hasVoiceProfile" class="text-xs text-red-500 ml-1">(профиль не настроен)</span>
               </label>
             </div>
             
@@ -136,17 +144,17 @@
         <div class="flex items-center justify-between">
           <Button 
             variant="outline" 
-            @click="router.push('/dashboard')"
+            @click="router.push('/content')"
           >
             Отмена
           </Button>
           <Button 
             variant="primary"
-            :disabled="isLoading || !formData.title || (!formData.description && !formData.audioTranscript)" 
+            :disabled="isLoading || !formData.title || (!formData.description && !formData.audioTranscript) || !hasVoiceProfile" 
             :is-loading="isLoading"
             @click="generateContent"
           >
-            Сгенерировать контент
+            {{ hasVoiceProfile ? 'Сгенерировать контент' : 'Настройте голосовой профиль' }}
           </Button>
         </div>
       </div>
@@ -190,12 +198,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useToast } from 'vue-toast-notification'
+import { useContentStore } from '@/stores/content'
+import { useProfileStore } from '@/stores/profile'
 import DashboardLayout from '@/components/layout/DashboardLayout.vue'
 import Button from '@/components/ui/Button.vue'
+import VoiceProfileAlert from '@/components/ui/VoiceProfileAlert.vue'
 
 const router = useRouter()
+const toast = useToast()
+const contentStore = useContentStore()
+const profileStore = useProfileStore()
 
 // Состояния
 const isLoading = ref(false)
@@ -205,6 +220,8 @@ const recordingStatus = ref<'ready' | 'recording' | 'processing' | 'done'>('read
 const recordingTime = ref(0)
 const recordingInterval = ref<number | null>(null)
 const generatedContent = ref<string | null>(null)
+const hasVoiceProfile = ref(false)
+const isLoadingProfile = ref(false)
 
 // Данные формы
 const formData = reactive({
@@ -213,6 +230,25 @@ const formData = reactive({
   audioTranscript: '',
   useVoiceProfile: true,
   includeImages: false
+})
+
+// Получение данных о профиле пользователя при загрузке компонента
+onMounted(async () => {
+  isLoadingProfile.value = true
+  try {
+    const profile = await profileStore.getProfile()
+    // Проверяем наличие голосового профиля
+    hasVoiceProfile.value = profileStore.hasVoiceProfile
+    
+    // Если профиля нет, отключаем опцию использования профиля
+    if (!hasVoiceProfile.value) {
+      formData.useVoiceProfile = false
+    }
+  } catch (error) {
+    console.error('Ошибка при получении данных профиля:', error)
+  } finally {
+    isLoadingProfile.value = false
+  }
 })
 
 // Функции для записи голоса
@@ -226,10 +262,10 @@ const startRecording = () => {
   }, 1000)
   
   // Здесь должна быть реальная логика записи с использованием Web Audio API
-  // В этом примере мы просто имитируем запись
+  // TODO: Интеграция с API записи голоса
 }
 
-const stopRecording = () => {
+const stopRecording = async () => {
   recordingStatus.value = 'processing'
   
   if (recordingInterval.value) {
@@ -237,13 +273,20 @@ const stopRecording = () => {
     recordingInterval.value = null
   }
   
-  // Здесь должна быть логика остановки записи и отправки аудио на сервер для транскрипции
-  // В этом примере мы имитируем процесс с задержкой
-  
-  setTimeout(() => {
+  try {
+    // TODO: Отправка аудио на сервер транскрипции
+    // В будущем здесь будет реальный запрос к speechApi
+    
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
     recordingStatus.value = 'done'
     formData.audioTranscript = 'Это пример транскрипции голосовой записи. В реальном приложении здесь будет текст, полученный из вашей голосовой записи с помощью API транскрипции.'
-  }, 2000)
+    
+  } catch (error) {
+    console.error('Ошибка при транскрипции аудио:', error)
+    toast.error('Не удалось распознать аудио', { duration: 5000 })
+    recordingStatus.value = 'ready'
+  }
 }
 
 const clearRecording = () => {
@@ -253,34 +296,52 @@ const clearRecording = () => {
 
 // Генерация контента
 const generateContent = async () => {
+  if (!formData.title) {
+    toast.error('Пожалуйста, введите заголовок', { duration: 3000 })
+    return
+  }
+  
+  if (!formData.description && !formData.audioTranscript) {
+    toast.error('Пожалуйста, введите описание или запишите голосовые заметки', { duration: 3000 })
+    return
+  }
+  
+  // Проверяем наличие голосового профиля, если пользователь выбрал его использование
+  if (formData.useVoiceProfile && !hasVoiceProfile.value) {
+    toast.error('Голосовой профиль не настроен. Создайте профиль или отключите эту опцию.', { duration: 5000 })
+    return
+  }
+  
   isLoading.value = true
   
   try {
-    // Здесь должен быть запрос к API для генерации контента
-    // В этом примере мы имитируем ответ от сервера с задержкой
+    // Подготавливаем данные для запроса генерации
+    const prompt = formData.description || formData.audioTranscript
     
-    await new Promise(resolve => setTimeout(resolve, 3000))
+    // Отправляем запрос на генерацию контента через хранилище
+    const response = await contentStore.generateContent({
+      prompt,
+      use_voice_profile: formData.useVoiceProfile && hasVoiceProfile.value,
+      include_images: formData.includeImages,
+      temperature: 0.7 // Стандартное значение температуры
+    })
     
-    // Пример сгенерированного содержимого
-    generatedContent.value = `
-      <h1>${formData.title}</h1>
-      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed euismod, nisl vel tincidunt luctus, nunc nibh aliquam nunc, eget tincidunt nisl nisi vel nisl. Sed euismod, nisl vel tincidunt luctus, nunc nibh aliquam nunc, eget tincidunt nisl nisi vel nisl.</p>
-      <h2>Подзаголовок 1</h2>
-      <p>Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi. Nulla facilisi.</p>
-      <ul>
-        <li>Пункт 1</li>
-        <li>Пункт 2</li>
-        <li>Пункт 3</li>
-      </ul>
-      <h2>Подзаголовок 2</h2>
-      <p>Donec auctor, nisl eget aliquam luctus, nisl nisl aliquam nisl, eget aliquam nisl nisl eget nisl. Donec auctor, nisl eget aliquam luctus, nisl nisl aliquam nisl, eget aliquam nisl nisl eget nisl.</p>
-      <blockquote>
-        <p>Цитата или важная мысль из сгенерированного контента.</p>
-      </blockquote>
-      <p>Заключительный абзац, подводящий итоги всего вышесказанного.</p>
-    `
+    // Сохраняем сгенерированный контент
+    generatedContent.value = response.content
+    
+    // Если генерация прошла успешно, прокручиваем страницу вниз к результату
+    if (generatedContent.value) {
+      setTimeout(() => {
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 100)
+    }
+    
   } catch (error) {
     console.error('Ошибка при генерации контента:', error)
+    // Ошибка уже будет показана через перехватчик в хранилище
   } finally {
     isLoading.value = false
   }
@@ -291,29 +352,20 @@ const regenerateContent = async () => {
   isRegenerating.value = true
   
   try {
-    // Здесь должен быть запрос к API для регенерации контента
-    await new Promise(resolve => setTimeout(resolve, 3000))
+    // Повторно используем тот же процесс, что и при первой генерации
+    const prompt = formData.description || formData.audioTranscript
     
-    // Обновляем сгенерированный контент с небольшими изменениями
-    generatedContent.value = `
-      <h1>${formData.title}</h1>
-      <p>Это обновленный контент после регенерации. В реальном приложении здесь будет новый вариант сгенерированного контента с помощью API.</p>
-      <h2>Новый подзаголовок 1</h2>
-      <p>Обновленный текст для первого раздела, который отличается от предыдущего варианта.</p>
-      <ul>
-        <li>Обновленный пункт 1</li>
-        <li>Обновленный пункт 2</li>
-        <li>Новый пункт 3</li>
-      </ul>
-      <h2>Новый подзаголовок 2</h2>
-      <p>Дополнительная информация для второго раздела, которая отличается от предыдущего варианта.</p>
-      <blockquote>
-        <p>Обновленная цитата в новой версии контента.</p>
-      </blockquote>
-      <p>Новый заключительный абзац, подводящий итоги всего вышесказанного.</p>
-    `
+    const response = await contentStore.generateContent({
+      prompt,
+      use_voice_profile: formData.useVoiceProfile,
+      include_images: formData.includeImages,
+      temperature: 0.9 // Увеличиваем температуру для большей вариативности
+    })
+    
+    generatedContent.value = response.content
   } catch (error) {
     console.error('Ошибка при регенерации контента:', error)
+    // Ошибка уже будет показана через перехватчик в хранилище
   } finally {
     isRegenerating.value = false
   }
@@ -321,16 +373,29 @@ const regenerateContent = async () => {
 
 // Сохранение контента
 const saveContent = async () => {
+  if (!generatedContent.value) {
+    toast.error('Нет контента для сохранения', { duration: 3000 })
+    return
+  }
+  
   isSaving.value = true
   
   try {
-    // Здесь должен быть запрос к API для сохранения контента
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    // Создаем новый контент через хранилище
+    const content = await contentStore.createContent({
+      title: formData.title,
+      content: generatedContent.value,
+      status: 'draft' // черновик по умолчанию
+    })
     
-    // После успешного сохранения перенаправляем на страницу с контентом
-    router.push('/content/1') // В реальном приложении здесь будет ID созданного контента
+    // Показываем уведомление об успехе
+    toast.success('Контент успешно создан', { duration: 3000 })
+    
+    // Перенаправляем на страницу просмотра созданного контента
+    router.push(`/content/${content.id}`)
   } catch (error) {
     console.error('Ошибка при сохранении контента:', error)
+    // Ошибка уже будет показана через перехватчик в хранилище
   } finally {
     isSaving.value = false
   }
