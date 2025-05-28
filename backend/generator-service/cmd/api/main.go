@@ -9,14 +9,42 @@ import (
 	"syscall"
 	"time"
 
+	"backend/generator-service/internal/dto"       // Импортируем dto
+	"backend/generator-service/internal/handler"   // Импортируем handler
+	"backend/generator-service/internal/service"   // Импортируем service
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	_ "backend/generator-service/cmd/api/docs"
+	swaggerFiles "github.com/swaggo/files"
+    ginSwagger "github.com/swaggo/gin-swagger"
 )
 
+
+
+
+// @title AI Content Generator API
+// @version 1.0
+// @description This is an API service for generating AI content using Ollama models.
+// @host localhost:8080
+// @BasePath /api/v1
+// @schemes http
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Printf("Warning: .env file not found")
 	}
+
+	// --- Настройка GeneratorService с Ollama ---
+	// Укажите имя модели Llama, которую вы загрузили в Ollama.
+	// Например, "llama3" или "llama3.2:3b"
+	ollamaModelName := os.Getenv("OLLAMA_MODEL_NAME")
+	if ollamaModelName == "" {
+		ollamaModelName = "llama3.2:3b" // Значение по умолчанию, если переменная окружения не установлена
+		log.Printf("OLLAMA_MODEL_NAME not set, defaulting to '%s'", ollamaModelName)
+	}
+
+	generatorSvc := service.NewGeneratorService(ollamaModelName)
+	// --- Конец настройки GeneratorService ---
+
 
 	router := gin.Default()
 
@@ -27,8 +55,23 @@ func main() {
 	// Routes
 	api := router.Group("/api/v1")
 	{
-		api.POST("/internal/generate", handleGenerate)
+		// @Summary Generate AI Content
+        // @Description Generates content using an Ollama language model, considering user-specific data.
+        // @Tags content-generation
+        // @Accept json
+        // @Produce json
+        // @Param request body dto.GenerateRequest true "Content generation request"
+        // @Success 200 {object} dto.GenerateResponse "Successfully generated content"
+        // @Failure 400 {object} object{error=string} "Bad Request"
+        // @Failure 500 {object} object{error=string} "Internal Server Error"
+        // @Router /internal/generate [post]
+		api.POST("/internal/generate", func(c *gin.Context) {
+			handler.HandleGenerate(c, generatorSvc) // Изменено здесь
+		})
+
+		api.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	}
+
 
 	// Server setup
 	srv := &http.Server{
@@ -55,7 +98,31 @@ func main() {
 	}
 }
 
-func handleGenerate(c *gin.Context) {
-	// TODO: Implement generation logic
-	c.JSON(http.StatusOK, gin.H{"status": "not implemented"})
+// handleGenerate теперь будет принимать GeneratorService
+// Изменяем сигнатуру функции
+func handleGenerate(c *gin.Context, generatorSvc service.GeneratorService) {
+	var req dto.GenerateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Вызываем логику генерации через сервисный слой
+	generatedContent, err := generatorSvc.GenerateContent(
+		c.Request.Context(), // Передаем контекст из Gin
+		req.Prompt,
+		req.VoiceDNA,
+	)
+	if err != nil {
+		log.Printf("Error generating content: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate content", "details": err.Error()})
+		return
+	}
+
+	response := dto.GenerateResponse{
+		Content: generatedContent,
+		Status:  "success",
+	}
+
+	c.JSON(http.StatusOK, response)
 }
