@@ -47,7 +47,13 @@
    go mod download
    ```
 
-2. **Запустите сервисы:**
+2. **Запуска LLM:**
+   ```bash
+   sudo docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+   sudo docker exec -it ollama ollama run llama3.2:3b
+   ```
+
+3. **Запустите сервисы:**
    ```bash
    # Auth Service
    go run auth-service/cmd/main.go

@@ -1,6 +1,8 @@
 module backend
 
-go 1.21
+go 1.22.4
+
+toolchain go1.24.1
 
 require (
 	github.com/caarlos0/env/v6 v6.10.1
@@ -15,6 +17,8 @@ require (
 	gorm.io/driver/postgres v1.5.4
 	gorm.io/gorm v1.25.5
 )
+
+require github.com/jonathanhecl/gollama v1.0.30
 
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect

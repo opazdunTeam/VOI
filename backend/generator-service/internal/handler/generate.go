@@ -1,34 +1,37 @@
 package handler
 
 import (
+	"log" // Добавим log для вывода ошибок
 	"net/http"
 
+	"backend/generator-service/internal/dto"
+	"backend/generator-service/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-type GenerateRequest struct {
-	Prompt      string  `json:"prompt" binding:"required"`
-	VoiceDNA    string  `json:"voice_dna" binding:"required"`
-	MaxLength   int     `json:"max_length"`
-	Temperature float64 `json:"temperature"`
-}
-
-type GenerateResponse struct {
-	Content string `json:"content"`
-	Status  string `json:"status"`
-}
-
-func HandleGenerate(c *gin.Context) {
-	var req GenerateRequest
+// HandleGenerate теперь принимает GeneratorService
+func HandleGenerate(c *gin.Context, generatorSvc service.GeneratorService) {
+	var req dto.GenerateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// TODO: Implement generation logic using service layer
+	// Вызываем логику генерации через сервисный слой
+	// Передаем все параметры из req в GenerateContent
+	generatedContent, err := generatorSvc.GenerateContent(
+		c.Request.Context(), // Передаем контекст из Gin
+		req.Prompt,
+		req.VoiceDNA,
+	)
+	if err != nil {
+		log.Printf("Error generating content: %v", err) // Логируем ошибку для отладки
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate content", "details": err.Error()})
+		return
+	}
 
-	response := GenerateResponse{
-		Content: "Generated content will appear here",
+	response := dto.GenerateResponse{
+		Content: generatedContent,
 		Status:  "success",
 	}
 
